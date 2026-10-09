@@ -1,0 +1,109 @@
+#!/bin/sh /etc/rc.common
+#
+# wifi-tune - 首次启动时一次性调优无线参数
+#
+# 设计意图：
+#   * 不硬编码 phy path（不同批次/QY 与 Q 的 path 不同），而是遍历实际探测到的
+#     wifi-device / wifi-iface 段来下发设置，兼容性最好
+#   * 只在第一次开机执行（用 /etc/.wifi_tuned 标记），之后你在后台改了什么都不会被覆盖
+#   * 放在 START=99，确保无线配置已经生成、ath11k 两个 radio 都已枚举出来
+#
+
+START=99
+STOP=10
+
+SSID_2G='CMCC-RAX3000QY'
+SSID_5G='CMCC-RAX3000QY-5G'
+WPA_KEY='12345678'
+
+tune() {
+	# 若无线配置还没生成，先生成
+	if [ ! -s /etc/config/wireless ]; then
+		wifi config >/dev/null 2>&1 || wifi detect >/etc/config/wireless 2>/dev/null
+		[ -s /etc/config/wireless ] || return 1
+	fi
+
+	local s dev band
+
+	# ---- 逐个数射频设备 ----
+	for s in $(uci -q show wireless | sed -n 's/^wireless\.\([^.]*\)=wifi-device$/\1/p'); do
+		band=$(uci -q get wireless."$s".band)
+
+		# 区域码必须设置，否则信道与功率受限
+		uci -q set wireless."$s".country='CN'
+		uci -q set wireless."$s".disabled='0'
+
+		case "$band" in
+			2g|2.4g)
+				# 2.4G 固定 20MHz + 非重叠信道，稳定性优先
+				uci -q set wireless."$s".channel='6'
+				uci -q set wireless."$s".htmode='HT20'
+				;;
+			5g)
+				# 5G 固定 80MHz + 非 DFS 信道 44，永不触发雷达避让
+				# （想跑 160MHz 用 /root/wifi-160.sh 160 或后台无线页切换）
+				uci -q set wireless."$s".channel='44'
+				uci -q set wireless."$s".htmode='HE80'
+				;;
+		esac
+	done
+
+	# ---- 逐个无线接口（只处理 AP 模式）----
+	for s in $(uci -q show wireless | sed -n 's/^wireless\.\([^.]*\)=wifi-iface$/\1/p'); do
+		[ "$(uci -q get wireless."$s".mode)" = 'ap' ] || continue
+
+		band=$(uci -q get wireless."$s".band)
+		dev=$(uci -q get wireless."$s".device)
+		[ -n "$band" ] || band=$(uci -q get wireless."$dev".band)
+
+		case "$band" in
+			2g|2.4g)
+				uci -q set wireless."$s".ssid="$SSID_2G"
+				# 2.4G 面向智能家居设备，用 WPA2 兼容性最好
+				uci -q set wireless."$s".encryption='psk2'
+				;;
+			5g)
+				uci -q set wireless."$s".ssid="$SSID_5G"
+				# 5G 面向手机/电脑，允许 WPA3，同时兼容 WPA2 设备
+				uci -q set wireless."$s".encryption='sae-mixed'
+				;;
+			*)
+				uci -q set wireless."$s".encryption='psk2'
+				;;
+		esac
+
+		uci -q set wireless."$s".key="$WPA_KEY"
+		uci -q set wireless."$s".disabled='0'
+
+		# 单机使用，关闭漫游相关特性（没有多 AP 组网时开着只会增加兼容性问题）
+		uci -q set wireless."$s".ieee80211r='0'
+		uci -q set wireless."$s".ieee80211k='0'
+		uci -q set wireless."$s".ieee80211v='0'
+
+		# 关闭 WMM U-APSD，避免个别省电客户端拖累整个射频
+		uci -q set wireless."$s".wmm_uapsd='0'
+	done
+
+	uci -q commit wireless
+	logger -t wifi-tune "无线参数已应用：2.4G=${SSID_2G} HT20/ch6，5G=${SSID_5G} HE80/ch44"
+}
+
+boot() {
+	[ -f /etc/.wifi_tuned ] && return 0
+
+	# 给 ath11k 一点时间把两个 radio 都枚举出来
+	sleep 5
+	tune && touch /etc/.wifi_tuned
+}
+
+start() {
+	boot
+}
+
+stop() {
+	return 0
+}
+
+shutdown() {
+	return 0
+}
