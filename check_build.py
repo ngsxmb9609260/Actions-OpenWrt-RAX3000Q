@@ -18,12 +18,21 @@ import urllib.request
 
 OWNER = "ngsxmb9609260"
 REPO = "Actions-OpenWrt-RAX3000Q"
-RUN_ID = 37944933916
+RUN_ID = 37961191310  # 兜底值；若 run_info.json 存在则以其为准
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUTDIR = os.path.join(ROOT, "output")
 TOKEN_PATH = os.path.join(ROOT, ".gh_token")
+
+# push_and_build.py 每次触发编译后会把最新的 run_id 写进 run_info.json
+_run_info = os.path.join(HERE, "run_info.json")
+if os.path.exists(_run_info):
+    try:
+        with open(_run_info, encoding="utf-8") as _f:
+            RUN_ID = json.load(_f).get("run_id", RUN_ID)
+    except Exception:
+        pass
 
 SSL_OK = ssl.create_default_context()
 SSL_NO = ssl._create_unverified_context()
