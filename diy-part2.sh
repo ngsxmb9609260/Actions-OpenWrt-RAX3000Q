@@ -6,15 +6,18 @@
 echo "===== diy-part2: 开始 ====="
 
 # ---------------------------------------------------------------------------
-# 1) EasyTier 使用官方预编译二进制，其 Makefile 里 RSTRIP:=: 关闭了 strip
-#    打开 strip 可显著缩小体积（Rust 二进制符号表很大）
+# 1) 【重要·切勿再改】EasyTier 的 Makefile 必须保留官方 RSTRIP:=:
+#
+#    easytier feed 用的是官方预编译二进制，它的 install 段会把【整个包目录】
+#    当作 $(RSTRIP) 的入参；一旦把 RSTRIP 换成真的 strip，打包阶段必然崩：
+#       arm-...-strip: Warning: '.../ipkg-arm_cortex-a7_neon-vfpv4/easytier-noweb' is a directory
+#       make[3]: *** [Makefile:87: .../easytier-noweb_2.6.4_...ipk] Error 1
+#       make: *** [include/toplevel.mk:230: world] Error 2
+#    2026-10-10 首次云编译正是死在这一行（详见 .workbuddy/memory/2026-10-10.md）。
+#
+#    代价只是固件大几 MB（Rust 符号表），对 128MB NAND 完全无压力 —— 不换。
 # ---------------------------------------------------------------------------
-for f in feeds/easytier/easytier-noweb/Makefile feeds/easytier/easytier/Makefile; do
-    if [ -f "$f" ]; then
-        sed -i 's|^RSTRIP:=:|RSTRIP:=$(TARGET_CROSS)strip|' "$f"
-        echo "[OK] 已为 $f 开启 strip"
-    fi
-done
+echo "[INFO] 保持 easytier 官方 RSTRIP:=:（强开 strip 会导致 ipk 打包失败）"
 
 # ---------------------------------------------------------------------------
 # 2) 兜底：easytier 的版本宏（feeds install 可能不会把 feed 根目录的 version.mk 带过去）
