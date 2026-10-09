@@ -1,0 +1,37 @@
+config defaults
+	option enable '1'
+
+config command
+	option name '5G 切 160MHz（高速）'
+	option command '/root/wifi-160.sh 160'
+	option param '0'
+	option stdout '1'
+	option stderr '1'
+
+config command
+	option name '5G 切 80MHz（稳定，推荐）'
+	option command '/root/wifi-160.sh 80'
+	option param '0'
+	option stdout '1'
+	option stderr '1'
+
+config command
+	option name '查看 5G 频宽状态'
+	option command '/root/wifi-160.sh'
+	option param '0'
+	option stdout '1'
+	option stderr '1'
+
+config command
+	option name '查看无线驱动日志'
+	option command 'logread | grep -i ath11k | tail -30'
+	option param '0'
+	option stdout '1'
+	option stderr '1'
+
+config command
+	option name '查看内存与 swap'
+	option command 'free -m; echo; echo "--- zram ---"; /etc/init.d/zram status 2>/dev/null | head -20'
+	option param '0'
+	option stdout '1'
+	option stderr '1'
