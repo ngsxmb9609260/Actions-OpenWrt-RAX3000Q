@@ -28,6 +28,32 @@ if [ ! -f feeds/easytier/version.mk ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 2b) 【重要】xray-core 包版本必须与 Go 工具链匹配
+#
+#    packages feed 自带的 xray-core 1.8.3 锁定了 2022-09 的 gvisor 依赖快照，
+#    其 pkg/gohacks 唯一文件的构建标签是 `go1.13 && !go1.21` —— workflow 的
+#    「Fix golang version」用 Go 1.25（kenzok8/golang -b 1.25）编译时，
+#    该目录下所有文件被 build constraints 排除，xray-core 必然编译失败：
+#       imports gvisor.dev/gvisor/pkg/gohacks: build constraints exclude all Go files
+#       ERROR: package/feeds/packages/xray-core failed to build
+#    2026-10-10 第 2 次云编译正是死在这里（run 37961191310）。
+#
+#    修法：升级到 v25.9.11（go.mod 要求 go 1.25、gvisor 2025-04 快照，
+#    与 go1.25.14 匹配）。PKG_HASH 为 codeload 源码包实测 SHA256。
+#    注意：最新版不能用（v26.3.27 要求 go 1.27，超出工具链）。
+# ---------------------------------------------------------------------------
+XRAY_DIR=feeds/packages/net/xray-core
+if [ -f "$XRAY_DIR/Makefile" ] && grep -q '^PKG_VERSION:=1\.8\.3' "$XRAY_DIR/Makefile"; then
+    sed -i 's/^PKG_VERSION:=.*/PKG_VERSION:=25.9.11/'  "$XRAY_DIR/Makefile"
+    sed -i 's/^PKG_HASH:=.*/PKG_HASH:=9bccd2681183698bf860b1af5407f97b4b60090324aa3ef1546e446612d44e1f/' "$XRAY_DIR/Makefile"
+    echo "[OK] xray-core 已升级: 1.8.3 -> 25.9.11（兼容 Go 1.25）"
+    grep -E '^PKG_(VERSION|HASH):=' "$XRAY_DIR/Makefile"
+else
+    echo "[WARN] 未找到 xray-core 1.8.3 的 Makefile（可能 feed 已更新），跳过升级"
+    grep -E '^PKG_VERSION:=' "$XRAY_DIR/Makefile" 2>/dev/null || true
+fi
+
+# ---------------------------------------------------------------------------
 # 3) files/ 目录里的脚本需要可执行位（GitHub 上传的文件默认 644）
 # ---------------------------------------------------------------------------
 if [ -d files ]; then
