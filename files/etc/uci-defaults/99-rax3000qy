@@ -1,0 +1,65 @@
+#!/bin/sh
+#
+# 99-rax3000qy - CMCC RAX3000QY 首次启动预置配置
+# 只在首次开机执行一次，执行成功后会被 rc 自动删除
+#
+
+# ---------------------------------------------------------------------------
+# 系统：主机名 / 时区 / zram swap
+#   zram 由基线固件自带的 zram-swap 提供，配置读取 system.@system[0]
+#   zram_size_mb=128 是上限；zram 只在真正用到时才占用物理内存（压缩后）
+# ---------------------------------------------------------------------------
+uci -q batch <<-'EOF'
+	set system.@system[0].hostname='RAX3000QY'
+	set system.@system[0].timezone='CST-8'
+	set system.@system[0].zonename='Asia/Shanghai'
+	set system.@system[0].zram_size_mb='128'
+	set system.@system[0].zram_comp_algo='lzo'
+	commit system
+EOF
+
+# ---------------------------------------------------------------------------
+# 界面语言固定为简体中文
+# ---------------------------------------------------------------------------
+uci -q set luci.main.lang='zh_cn'
+uci -q set luci.main.mediaurlbase='/luci-static/bootstrap'
+uci -q commit luci
+
+# ---------------------------------------------------------------------------
+# LAN：192.168.99.1 / 24
+# WAN：默认 DHCP 即插即用（需要 PPPoE 时在后台把 WAN 协议改为 PPPoE 并填账号）
+# ---------------------------------------------------------------------------
+uci -q batch <<-'EOF'
+	set network.lan.ipaddr='192.168.99.1'
+	set network.lan.netmask='255.255.255.0'
+	commit network
+EOF
+
+if uci -q get network.wan >/dev/null; then
+	uci -q set network.wan.proto='dhcp'
+	uci -q commit network
+fi
+
+# ---------------------------------------------------------------------------
+# 基础 DNS 上游（PassWall 运行时会按分流转发，这里定死一个稳定底座）
+# ---------------------------------------------------------------------------
+if uci -q get dhcp.@dnsmasq[0] >/dev/null; then
+	uci -q delete dhcp.@dnsmasq[0].server
+	uci -q add_list dhcp.@dnsmasq[0].server='223.5.5.5'
+	uci -q add_list dhcp.@dnsmasq[0].server='119.29.29.29'
+	uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
+	uci -q commit dhcp
+fi
+
+# ---------------------------------------------------------------------------
+# root 密码 → root
+#   万一 passwd 不可用也不会锁死：密码保持为空，LuCI 会提示设置
+# ---------------------------------------------------------------------------
+printf '%s\n%s\n' 'root' 'root' | passwd root >/dev/null 2>&1
+
+# ---------------------------------------------------------------------------
+# 启用一次性的无线调优服务（S99，在无线配置生成之后执行）
+# ---------------------------------------------------------------------------
+[ -x /etc/init.d/wifi-tune ] && /etc/init.d/wifi-tune enable >/dev/null 2>&1
+
+exit 0
