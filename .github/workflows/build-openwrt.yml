@@ -38,6 +38,14 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    # 仓库默认的 GITHUB_TOKEN 是只读（Contents: read），会导致
+    # softprops/action-gh-release 创建 Release 时 403。
+    # 必须在 workflow 里显式提权（2026-10-10 首次云编译就是栽在这）。
+    permissions:
+      contents: write
+      actions: write
+      packages: read
+
     steps:
     - name: Checkout
       uses: actions/checkout@main
@@ -200,7 +208,7 @@ jobs:
 
     - name: Organize files
       id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
@@ -216,7 +224,7 @@ jobs:
 
     - name: Generate release tag
       id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
         echo "release_tag=RAX3000Q-$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
